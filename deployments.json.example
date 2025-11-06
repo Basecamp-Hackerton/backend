@@ -1,0 +1,17 @@
+{
+  "localhost": {
+    "WalletAuth": {
+      "address": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+      "chainId": 1337,
+      "deployedAt": "2025-01-20T10:00:00.000Z"
+    }
+  },
+  "baseSepolia": {
+    "WalletAuth": {
+      "address": "0x...",
+      "chainId": 84532,
+      "deployedAt": "2025-01-20T10:00:00.000Z"
+    }
+  }
+}
+
