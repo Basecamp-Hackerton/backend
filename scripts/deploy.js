@@ -7,22 +7,38 @@ async function main() {
 
   const WalletAuth = await hre.ethers.getContractFactory("WalletAuth");
   const walletAuth = await WalletAuth.deploy();
-
   await walletAuth.waitForDeployment();
+  const walletAuthAddress = await walletAuth.getAddress();
 
-  const address = await walletAuth.getAddress();
+  console.log("WalletAuth deployed to:", walletAuthAddress);
+
+  console.log("\nDeploying BaseCampBadges contract...");
+  const defaultBadgeURI =
+    process.env.FIRST_POST_BADGE_URI ||
+    "ipfs://QmPlaceholderBadgeMetadataURI"; // TODO: 환경 변수로 교체하세요.
+  const BaseCampBadges = await hre.ethers.getContractFactory("BaseCampBadges");
+  const baseCampBadges = await BaseCampBadges.deploy(defaultBadgeURI);
+  await baseCampBadges.waitForDeployment();
+  const baseCampBadgesAddress = await baseCampBadges.getAddress();
+
+  console.log("BaseCampBadges deployed to:", baseCampBadgesAddress);
+
   const network = await hre.ethers.provider.getNetwork();
   const chainId = Number(network.chainId);
+  const networkName = hre.network.name;
 
-  console.log("WalletAuth deployed to:", address);
-  console.log("Network:", hre.network.name);
+  console.log("Network:", networkName);
   console.log("Chain ID:", chainId);
 
-  // 배포 정보를 JSON 파일에 저장
+  persistDeployments(networkName, chainId, walletAuthAddress, baseCampBadgesAddress);
+  updateFrontendConfig("WalletAuth", walletAuthAddress, chainId);
+  updateFrontendConfig("BaseCampBadges", baseCampBadgesAddress, chainId);
+}
+
+function persistDeployments(networkName, chainId, walletAuthAddress, baseCampBadgesAddress) {
   const deploymentsPath = path.join(__dirname, "..", "deployments.json");
   let deployments = {};
 
-  // 기존 배포 정보가 있으면 읽기
   if (fs.existsSync(deploymentsPath)) {
     try {
       deployments = JSON.parse(fs.readFileSync(deploymentsPath, "utf8"));
@@ -31,19 +47,22 @@ async function main() {
     }
   }
 
-  // 네트워크별 주소 저장
-  const networkName = hre.network.name;
   if (!deployments[networkName]) {
     deployments[networkName] = {};
   }
 
   deployments[networkName].WalletAuth = {
-    address: address,
-    chainId: chainId,
+    address: walletAuthAddress,
+    chainId,
     deployedAt: new Date().toISOString(),
   };
 
-  // JSON 파일에 저장
+  deployments[networkName].BaseCampBadges = {
+    address: baseCampBadgesAddress,
+    chainId,
+    deployedAt: new Date().toISOString(),
+  };
+
   fs.writeFileSync(
     deploymentsPath,
     JSON.stringify(deployments, null, 2),
@@ -51,12 +70,9 @@ async function main() {
   );
 
   console.log(`\n✅ 배포 정보가 ${deploymentsPath}에 저장되었습니다.`);
-
-  // 프론트엔드 설정 파일 자동 업데이트
-  updateFrontendConfig(address, chainId, networkName);
 }
 
-function updateFrontendConfig(address, chainId, networkName) {
+function updateFrontendConfig(contractName, address, chainId) {
   const frontendConfigPath = path.join(
     __dirname,
     "..",
@@ -73,32 +89,57 @@ function updateFrontendConfig(address, chainId, networkName) {
 
   let content = fs.readFileSync(frontendConfigPath, "utf8");
 
-  // 네트워크별 주소 업데이트
-  if (chainId === 1337 || chainId === 31337) {
-    // 로컬 네트워크
-    content = content.replace(
-      /export const WALLET_AUTH_CONTRACT_ADDRESS_LOCAL = ".*";/,
-      `export const WALLET_AUTH_CONTRACT_ADDRESS_LOCAL = "${address}";`
-    );
-    console.log("✅ 로컬 네트워크 주소가 자동으로 업데이트되었습니다.");
-  } else if (chainId === 84532) {
-    // Base Sepolia
-    content = content.replace(
-      /export const WALLET_AUTH_CONTRACT_ADDRESS_SEPOLIA = ".*";/,
-      `export const WALLET_AUTH_CONTRACT_ADDRESS_SEPOLIA = "${address}";`
-    );
-    console.log("✅ Base Sepolia 주소가 자동으로 업데이트되었습니다.");
-  } else if (chainId === 8453) {
-    // Base Mainnet
-    content = content.replace(
-      /export const WALLET_AUTH_CONTRACT_ADDRESS_MAINNET = ".*";/,
-      `export const WALLET_AUTH_CONTRACT_ADDRESS_MAINNET = "${address}";`
-    );
-    console.log("✅ Base Mainnet 주소가 자동으로 업데이트되었습니다.");
+  const replaceMap = {
+    WalletAuth: {
+      [1337]: /export const WALLET_AUTH_CONTRACT_ADDRESS_LOCAL = ".*";/,
+      [31337]: /export const WALLET_AUTH_CONTRACT_ADDRESS_LOCAL = ".*";/,
+      [84532]: /export const WALLET_AUTH_CONTRACT_ADDRESS_SEPOLIA = ".*";/,
+      [8453]: /export const WALLET_AUTH_CONTRACT_ADDRESS_MAINNET = ".*";/,
+    },
+    BaseCampBadges: {
+      [1337]: /export const BADGE_CONTRACT_ADDRESS_LOCAL = ".*";/,
+      [31337]: /export const BADGE_CONTRACT_ADDRESS_LOCAL = ".*";/,
+      [84532]: /export const BADGE_CONTRACT_ADDRESS_SEPOLIA = ".*";/,
+      [8453]: /export const BADGE_CONTRACT_ADDRESS_MAINNET = ".*";/,
+    },
+  };
+
+  const replacementPatterns = replaceMap[contractName];
+  if (!replacementPatterns) {
+    console.warn(`프론트엔드 설정 업데이트를 위한 계약명이 정의되지 않았습니다: ${contractName}`);
+    return;
   }
+
+  const targetPattern = replacementPatterns[chainId];
+  if (!targetPattern) {
+    console.warn(`해당 체인 ID(${chainId})에 대한 대체 패턴이 없습니다. 프론트엔드 설정을 수동으로 업데이트하세요.`);
+    return;
+  }
+
+  content = content.replace(
+    targetPattern,
+    contractName === "WalletAuth"
+      ? `export const WALLET_AUTH_CONTRACT_ADDRESS_${getNetworkKey(chainId)} = "${address}";`
+      : `export const BADGE_CONTRACT_ADDRESS_${getNetworkKey(chainId)} = "${address}";`
+  );
+
+  const logLabel = getNetworkLabel(chainId);
+  console.log(`✅ ${contractName} ${logLabel} 주소가 자동으로 업데이트되었습니다.`);
 
   fs.writeFileSync(frontendConfigPath, content, "utf8");
   console.log(`\n📝 프론트엔드 설정 파일이 업데이트되었습니다: ${frontendConfigPath}`);
+}
+
+function getNetworkKey(chainId) {
+  if (chainId === 84532) return "SEPOLIA";
+  if (chainId === 8453) return "MAINNET";
+  return "LOCAL";
+}
+
+function getNetworkLabel(chainId) {
+  if (chainId === 84532) return "Base Sepolia";
+  if (chainId === 8453) return "Base Mainnet";
+  return "로컬 네트워크";
 }
 
 main()

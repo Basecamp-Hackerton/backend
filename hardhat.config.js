@@ -1,4 +1,11 @@
 require("@nomicfoundation/hardhat-toolbox");
+require("dotenv").config();
+
+const {
+  PRIVATE_KEY,
+  BASE_SEPOLIA_RPC_URL,
+  BASE_RPC_URL,
+} = process.env;
 
 /** @type import('hardhat/config').HardhatUserConfig */
 module.exports = {
@@ -20,13 +27,13 @@ module.exports = {
       chainId: 31337, // Hardhat 기본값과 일치
     },
     baseSepolia: {
-      url: process.env.BASE_SEPOLIA_RPC_URL || "https://sepolia.base.org",
-      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
+      url: BASE_SEPOLIA_RPC_URL || "https://sepolia.base.org",
+      accounts: PRIVATE_KEY ? [PRIVATE_KEY] : [],
       chainId: 84532,
     },
     base: {
-      url: process.env.BASE_RPC_URL || "https://mainnet.base.org",
-      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
+      url: BASE_RPC_URL || "https://mainnet.base.org",
+      accounts: PRIVATE_KEY ? [PRIVATE_KEY] : [],
       chainId: 8453,
     },
   },
